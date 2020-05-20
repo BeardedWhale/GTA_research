@@ -3,6 +3,7 @@ from torch import nn
 import os
 from models import resnet, pre_act_resnet, wide_resnet, resnext, densenet
 import copy
+
 RESNET_DEPTHS = [10, 18, 34, 50, 101, 152,
                  200]
 
@@ -13,89 +14,6 @@ RESNEXT_DEPTHS = [50, 101, 152]
 DENSENET_DEPTHS = [121, 169, 201, 264]
 
 PRERESNET_DEPTHS = [18, 34, 50, 101, 152, 200]
-
-def get_resnet_model(model_depth):
-    assert model_depth in RESNET_DEPTHS, f'Resnet model depth {model_depth} is not valid.' \
-                                         f' Acceptable: {RESNET_DEPTHS}'
-    if model_depth == 10:
-        return resnet.resnet10
-    if model_depth == 18:
-        return resnet.resnet18
-    if model_depth == 34:
-        return resnet.resnet34
-    if model_depth == 50:
-        return resnet.resnet50
-    if model_depth == 101:
-        return resnet.resnet101
-    if model_depth == 152:
-        return resnet.resnet152
-    if model_depth == 200:
-        return resnet.resnet200
-
-
-def get_resnext_model(model_depth):
-    assert model_depth in RESNEXT_DEPTHS, f'Resnext model depth {model_depth} is not valid.' \
-                                          f' Acceptable: {RESNEXT_DEPTHS}'
-    if model_depth == 50:
-        return resnext.resnet50
-    if model_depth == 101:
-        return resnext.resnet101
-    if model_depth == 152:
-        return resnext.resnet152
-
-def get_preresnet_model(model_depth):
-    assert model_depth in PRERESNET_DEPTHS, f'Preresnet model depth {model_depth} is not valid.' \
-                                          f' Acceptable: {PRERESNET_DEPTHS}'
-
-    if model_depth == 18:
-        return pre_act_resnet.resnet18
-    if model_depth == 34:
-        return pre_act_resnet.resnet34
-    if model_depth == 50:
-        return pre_act_resnet.resnet50
-    if model_depth == 101:
-        return pre_act_resnet.resnet101
-    if model_depth == 152:
-        return pre_act_resnet.resnet152
-    if model_depth == 200:
-        return pre_act_resnet.resnet200
-
-def get_densenet_model(model_depth):
-    assert model_depth in DENSENET_DEPTHS, f'Densenet model depth {model_depth} is not valid.' \
-                                          f' Acceptable: {DENSENET_DEPTHS}'
-    if model_depth == 121:
-        return densenet.densenet121
-    if model_depth == 169:
-        return densenet.densenet169
-    if model_depth == 201:
-        return densenet.densenet201
-    if model_depth == 264:
-        return densenet.densenet264
-
-def load_pretrained(model, model_name, model_depth, pretrain_path):
-    new_model = copy.deepcopy(model)
-    assert os.path.exists(pretrain_path), f'Path to train model {pretrain_path} does not exist'
-    pretrain_model = torch.load(pretrain_path)
-    arch = f'{model_name}-{model_depth}'
-    print()
-    assert arch == pretrain_model['arch'], f'Incorrectly loaded: {pretrain_model["arch"]} for created model: {arch}'
-
-    new_model.load_state_dict(pretrain_model['state_dict'])
-
-    return new_model
-    # if model_name == 'densenet':
-    #     model.module.classifier = nn.Linear(
-    #         base_model.module.classifier.in_features, config.n_finetune_classes)
-    #     base_model.module.classifier = base_model.module.classifier.cuda(device=config.cuda_id)  # TODO THIS
-
-    # no cuda case
-    #  if config.model == 'densenet':
-    #                 base_model.classifier = nn.Linear(
-    #                     base_model.classifier.in_features, config.n_finetune_classes)
-    #             else:
-    #                 base_model.fc = nn.Linear(base_model.fc.in_features,
-    #                                      config.n_finetune_classes)
-
 
 
 def generate_model(config):
@@ -165,55 +83,88 @@ def generate_model(config):
         else:
             base_model = nn.DataParallel(base_model, device_ids=[config.cuda_id0])
         if config.pretrain_path:
+            base_model = load_pretrained(base_model, config.base_model, config.model_depth, config.pretrain_path)
+        parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)  # TODO change freezing
 
+    if not config.cuda_available:
 
-    if  config.cuda_available:
-        import os
-        # os.environ['CUDA_VISIBLE_DEVICES'] = f'{opt.cuda_id}'
-        base_model = nn.DataParallel(base_model, device_ids=[0])  # TODO THIS
-        # model = model.cuda(device=opt.cuda_id) # TODO THIS
         if config.pretrain_path:
             base_model = load_pretrained(base_model, config.base_model, config.model_depth, config.pretrain_path)
 
-            # elif opt.use_quadriplet:
-            #     model = EmbeddingModel(model, opt.n_finetune_classes, not opt.no_cuda, opt.cuda_id)
-            # else:
-            #     base_model.module.fc = nn.Sequential(nn.Dropout(0.4),
-            #                                     nn.Linear(base_model.module.fc.in_features,
-            #                                               512),
-            #                                     nn.ReLU6(),
-            #                                     nn.Dropout(0.4),
-            #                                     nn.Linear(512, 256),
-            #                                     nn.ReLU6(),
-            #                                     nn.Dropout(0.4),
-            #                                     nn.Linear(256, config.n_finetune_classes)).cuda(device=config.cuda_id)
-            #     # model.module.fc = nn.Linear(model.module.fc.in_features,
-            #     #                             opt.n_finetune_classes)
-            #
-            #     # model.module.fc = model.module.fc.cuda(device=opt.cuda_id)
-            # # model = nn.DataParallel(model, device_ids=[0, 1])
-            base_model = base_model.cuda(device=config.cuda_id)
-            parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)
-            print(len(list(parameters)), 'params to fine tune', config.ft_begin_index)
+        base_model = update_with_finetune_block(base_model, config)
+        parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)
+        print(len(list(parameters)), 'params to fine tune', config.ft_begin_index)
 
-            # model = nn.DataParallel(model, device_ids=[0, 1])
-            print('Device:', base_model.output_device, base_model.device_ids)
-            return base_model, parameters
+        # model = nn.DataParallel(model, device_ids=[0, 1])
+        # print('Device:', base_model.output_device, base_model.device_ids)
+        return base_model, parameters
     else:
         if config.pretrain_path:
             base_model = load_pretrained(base_model, config.base_model, config.model_depth, config.pretrain_path)
 
+        base_model = update_with_finetune_block(base_model, config)
+        parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)
 
-            parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)
-
-            return base_model, parameters
+        return base_model, parameters
 
     return base_model, base_model.parameters()
 
 
 class FineTuneBlock1(nn.Module):
-    def __init__(self, input_size, cuda=True, cuda_ids=[0]):
-        kek = 0
+    def __init__(self, input_size, n_finetune_classes, cuda=True, cuda_ids=[0], dropout_rate=0.3,
+                 use_batch_norm: bool = True):
+        super(FineTuneBlock1, self).__init__()
+        self.fc1 = nn.Linear(input_size, 512)
+        self.fc2 = nn.Linear(512, 128)
+        self.fc3 = nn.Linear(128, n_finetune_classes)
+        self.dropout_rate = dropout_rate
+        self.use_batch_norm = use_batch_norm
+        if self.use_batch_norm:
+            self.bn1 = nn.BatchNorm1d(512)
+            self.bn2 = nn.BatchNorm1d(128)
+
+    def forward(self, x):
+        x_prime = nn.Dropout(self.dropout_rate)(nn.ReLU()(self.fc1(x)))
+        if self.use_batch_norm:
+            x_prime = self.bn1(x_prime)
+        x_prime = nn.ReLU()(self.fc2(x_prime))
+        if self.use_batch_norm:
+            x_prime = self.bn2(x_prime)
+        classes = self.fc3(x_prime)
+        return classes
+
+
+class FineTuneBlock2(nn.Module):
+    def __init__(self, input_size, n_finetune_classes, cuda=True, cuda_ids=[0], dropout_rate=0.3,
+                 use_batch_norm: bool = True):
+        super(FineTuneBlock2, self).__init__()
+        self.fc1 = nn.Linear(input_size, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(2304, 128)
+        self.fc4 = nn.Linear(128, n_finetune_classes)
+        self.dropout_rate = dropout_rate
+
+        self.use_batch_norm = use_batch_norm
+        if self.use_batch_norm:
+            self.bn1 = nn.BatchNorm1d(512)
+            self.bn2 = nn.BatchNorm1d(256)
+            self.bn3 = nn.BatchNorm1d(128)
+
+    def forward(self, x):
+        x_prime = nn.Dropout(self.dropout_rate)(nn.ReLU()(self.fc1(x)))
+        if self.use_batch_norm:
+            x_prime = self.bn1(x_prime)
+        x_prime = nn.Dropout(self.dropout_rate)(nn.ReLU()(self.fc2(x_prime)))
+        if self.use_batch_norm:
+            x_prime = self.bn2(x_prime)
+        print(x.shape)
+        residual = torch.cat([x_prime, x], dim=1)
+        x_prime = nn.ReLU()(self.fc3(residual))
+        if self.use_batch_norm:
+            x_prime = self.bn3(x_prime)
+        classes = self.fc4(x_prime)
+        return classes
+
 
 class EmbeddingModel(nn.Module):
     def __init__(self, model, n_finetune_classes, cuda=True, cuda_id=0):
@@ -243,3 +194,99 @@ class EmbeddingModel(nn.Module):
         y = self.classifier(embedding)
 
         return embedding, y
+
+
+def get_resnet_model(model_depth):
+    assert model_depth in RESNET_DEPTHS, f'Resnet model depth {model_depth} is not valid.' \
+                                         f' Acceptable: {RESNET_DEPTHS}'
+    if model_depth == 10:
+        return resnet.resnet10
+    if model_depth == 18:
+        return resnet.resnet18
+    if model_depth == 34:
+        return resnet.resnet34
+    if model_depth == 50:
+        return resnet.resnet50
+    if model_depth == 101:
+        return resnet.resnet101
+    if model_depth == 152:
+        return resnet.resnet152
+    if model_depth == 200:
+        return resnet.resnet200
+
+
+def get_resnext_model(model_depth):
+    assert model_depth in RESNEXT_DEPTHS, f'Resnext model depth {model_depth} is not valid.' \
+                                          f' Acceptable: {RESNEXT_DEPTHS}'
+    if model_depth == 50:
+        return resnext.resnet50
+    if model_depth == 101:
+        return resnext.resnet101
+    if model_depth == 152:
+        return resnext.resnet152
+
+
+def get_preresnet_model(model_depth):
+    assert model_depth in PRERESNET_DEPTHS, f'Preresnet model depth {model_depth} is not valid.' \
+                                            f' Acceptable: {PRERESNET_DEPTHS}'
+
+    if model_depth == 18:
+        return pre_act_resnet.resnet18
+    if model_depth == 34:
+        return pre_act_resnet.resnet34
+    if model_depth == 50:
+        return pre_act_resnet.resnet50
+    if model_depth == 101:
+        return pre_act_resnet.resnet101
+    if model_depth == 152:
+        return pre_act_resnet.resnet152
+    if model_depth == 200:
+        return pre_act_resnet.resnet200
+
+
+def get_densenet_model(model_depth):
+    assert model_depth in DENSENET_DEPTHS, f'Densenet model depth {model_depth} is not valid.' \
+                                           f' Acceptable: {DENSENET_DEPTHS}'
+    if model_depth == 121:
+        return densenet.densenet121
+    if model_depth == 169:
+        return densenet.densenet169
+    if model_depth == 201:
+        return densenet.densenet201
+    if model_depth == 264:
+        return densenet.densenet264
+
+
+def update_with_finetune_block(base_model, config):
+    if config.cuda_available:
+        device = torch.device(f"cuda:{config.cuda_idd0}")
+    else:
+        device = torch.device('cpu')
+    FineTuneBlock = FineTuneBlock1 if config.finetune_block == 1 else FineTuneBlock2
+    if config.base_model == 'densenet':
+        block = FineTuneBlock(base_model.classifier.in_features, config.n_finetune_classes,
+                              use_batch_norm=config.use_batch_norm,
+                              dropout_rate=config.finetune_dropout)
+        block = block.to(device)
+        base_model.classifier = block
+    else:
+        block = FineTuneBlock(base_model.fc.in_features, config.n_finetune_classes,
+                              use_batch_norm=config.use_batch_norm,
+                              dropout_rate=config.finetune_dropout)
+        block = block.to(device)
+        base_model.fc = block
+
+    return base_model
+
+
+def load_pretrained(model, model_name, model_depth, pretrain_path):
+    new_model = copy.deepcopy(model)
+    assert os.path.exists(pretrain_path), f'Path to train model {pretrain_path} does not exist'
+    pretrain_model = torch.load(pretrain_path)
+    arch = f'{model_name}-{model_depth}'
+    print()
+    assert arch == pretrain_model['arch'], f'Incorrectly loaded: {pretrain_model["arch"]} for created model: {arch}'
+
+    new_model.load_state_dict(pretrain_model['state_dict'])
+
+    return new_model

@@ -17,6 +17,21 @@ def parse_opts():
         choices=['3d', 'ir_csn', 'ip_csn']
     )
     parser.add_argument(
+        '--n_finetune_classes',
+        default=8,
+        type=int,
+        help=
+        'Number of classes for fine-tuning. n_classes is set to the number when pretraining.'
+    )
+    parser.add_argument(
+        '--finetune_block',
+        default=1,
+        type=int,
+        help=
+        'Finetune block to use',
+        choices=[1, 2]
+    )
+    parser.add_argument(
         '--model_depth',
         default=50,
         type=int,
@@ -62,7 +77,7 @@ def parse_opts():
         type=str,
         help='Save data (.pth) of previous training')
     parser.add_argument(
-        '--pretrain_path', default='pretrained_models/resnet-50-kinetics.pth', type=str, help='Pretrained model (.pth)')
+        '--pretrain_path', default='', type=str, help='Pretrained model (.pth)')
     parser.add_argument(
         '--checkpoint',
         default=1,
@@ -77,13 +92,22 @@ def parse_opts():
         help=
         'Number of classes (activitynet: 200, kinetics: 400, ucf101: 101, hmdb51: 51, GTA: 7)'
     )
+
     parser.add_argument(
-        '--n_finetune_classes',
-        default=8,
-        type=int,
+        '--finetune_dropout',
+        default=0.3,
+        type=float,
         help=
-        'Number of classes for fine-tuning. n_classes is set to the number when pretraining.'
+        'Dropout rate for finetuning block'
     )
+    parser.add_argument(
+        '--use_batch_norm',
+        default=False,
+        type=bool,
+        help=
+        'If use batchnorm in funetune block or not'
+    )
+
 
     # SAMPLE PARAMS
     parser.add_argument(
@@ -248,7 +272,7 @@ def parse_opts():
         '--cuda_id0', default=0, help='0 or 1 or other number for cuda device'
     )
     parser.add_argument('--cuda_id1', default=1, help='0 or 1 or other number for cuda device, -1 if second GPU is not available')
-    parser.set_defaults(cuda_available=True)
+    parser.set_defaults(cuda_available=False)
     parser.add_argument(
         '--n_threads',
         default=0,
