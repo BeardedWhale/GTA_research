@@ -4,6 +4,9 @@ import os
 from models import resnet, pre_act_resnet, wide_resnet, resnext, densenet
 import copy
 
+
+# https://pytorch.org/hub/pytorch_vision_resnext/
+
 RESNET_DEPTHS = [10, 18, 34, 50, 101, 152,
                  200]
 
@@ -284,7 +287,6 @@ def load_pretrained(model, model_name, model_depth, pretrain_path):
     assert os.path.exists(pretrain_path), f'Path to train model {pretrain_path} does not exist'
     pretrain_model = torch.load(pretrain_path)
     arch = f'{model_name}-{model_depth}'
-    print()
     assert arch == pretrain_model['arch'], f'Incorrectly loaded: {pretrain_model["arch"]} for created model: {arch}'
 
     new_model.load_state_dict(pretrain_model['state_dict'])
