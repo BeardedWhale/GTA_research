@@ -1,104 +1,64 @@
-from utils import AverageMeter, calculate_accuracy, per_class_accuracies, PerClassAcc, CLASS_MAP, targets_to_one_hot
+from typing import Dict
+
+from torch.autograd import Variable
+
+from logger import Logger
+from quadriplet_loss import batch_hard_quadriplet_loss
+from utils import STEP
+import os
+import sys
+from tqdm import tqdm
+import torch
+from torch.utils.data import DataLoader
 
 
-def train_epoch(epoch, data_loader, model, criterion, optimizer, opt,
-                epoch_logger, batch_logger, experiment=None):
-    print('train at epoch {}'.format(epoch))
+def epoch_step(epoch, loaders: Dict[STEP, DataLoader], model: torch.nn.Module,
+               loggers: Dict[STEP, Logger], criterion, optimizer,
+               conf):
+    n_iter = sum([len(loader) for loader in loaders.values()])
+    steps = list(loaders.keys())
+    assert list(loggers.keys()) == list(loaders.keys()), "excpected same steps for loaders and loggers"
+    with tqdm(total=n_iter, file=sys.stdout) as t:
+        t.set_description(f'EPOCH: {epoch + 1}/{conf.n_epochs}')
+        for step in steps:
+            loader = loaders[step]
+            logger = loggers[step]
+            if step == STEP.TRAIN:
+                model.train()
+            else:
+                model.eval()
+            for i, (inputs, targets, scene_targets) in enumerate(loader):
+                if conf.cuda_available:
+                    targets = targets.cuda(device=conf.cuda_id0, non_blocking=True)
+                inputs = Variable(inputs)
+                targets = Variable(targets)
 
-    model.train()
-    per_class_acc =  PerClassAcc(opt.n_finetune_classes)
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    losses = AverageMeter()
-    accuracies = AverageMeter()
+                if conf.use_quadriplet:
+                    embs, outputs = model(inputs)
+                    loss = criterion(outputs, targets)
+                    batch_hard_loss = 0.5 * batch_hard_quadriplet_loss(targets, scene_targets, embs)
+                    loss += batch_hard_loss
+                else:
 
-    all_targets = []
-    all_outputs = []
-    end_time = time.time()
-    for i, (inputs, targets, scene_targets) in tqdm(enumerate(data_loader), total=len(data_loader)):
-        data_time.add(time.time() - end_time)
+                    outputs = model(inputs)
+                    loss = criterion(outputs, targets)
+                if step == STEP.TRAIN:
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                logger.update(loss.data, outputs, targets)
+                t.update(1)
+                t.set_postfix(ordered_dict=logger.main_state(), refresh=True)
+            logger.update_epoch(epoch)
+            logger.reset()
 
-        if not opt.no_cuda:
-            targets = targets.cuda(device=opt.cuda_id, non_blocking=True)
-        inputs = Variable(inputs)
-        targets = Variable(targets)
-
-
-        if opt.use_quadriplet:
-            embs, outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            batch_hard_loss = 0.5 * batch_hard_quadriplet_loss(targets, scene_targets, embs)
-            loss += batch_hard_loss
-        else:
-
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-
-        acc = calculate_accuracy(outputs, targets)
-        pr_cl = per_class_accuracies(outputs, targets)
-        per_class_acc.add(pr_cl)
-        losses.add(loss.data, inputs.size(0))
-        accuracies.add(acc, inputs.size(0))
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        batch_time.add(time.time() - end_time)
-        end_time = time.time()
-
-        batch_logger.log({
-            'epoch': epoch,
-            'batch': i + 1,
-            'iter': (epoch - 1) * len(data_loader) + (i + 1),
-            'loss': losses.val,
-            'acc': accuracies.val,
-            'lr': optimizer.param_groups[0]['lr']
-        })
-        if experiment:
-            experiment.log_metric('TRAIN Loss batch', losses.val.cpu())
-            experiment.log_metric('TRAIN Acc batch', accuracies.val.cpu())
-
-        print('Epoch: [{0}][{1}/{2}]\t'
-              'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-              'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-              'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-              'Acc {acc.val:.3f} ({acc.avg:.3f})'.format(
-                  epoch,
-                  i + 1,
-                  len(data_loader),
-                  batch_time=batch_time,
-                  data_time=data_time,
-                  loss=losses,
-                  acc=accuracies))
-
-        all_outputs.extend(torch.nn.functional.sigmoid(outputs).tolist())
-        target_one_hot = targets_to_one_hot(targets, opt.n_finetune_classes)
-        all_targets.extend(target_one_hot.tolist())
-
-    experiment.log_confusion_matrix(all_targets, all_outputs, title=f'TRAIN matrix EPOCH {epoch}', step=epoch,
-        file_name=f"TRAIN-confusion-matrix-{epoch}.json")
-    epoch_logger.log({
-        'epoch': epoch,
-        'loss': losses.avg,
-        'acc': accuracies.avg,
-        'lr': optimizer.param_groups[0]['lr']
-    })
-    if experiment:
-        experiment.log_metric('TRAIN Loss epoch', losses.avg.cpu())
-        experiment.log_metric('TRAIN Acc epoch', accuracies.avg.cpu())
-        experiment.log_metric('TRAIN LR', optimizer.param_groups[0]['lr'])
-
-    if epoch % opt.checkpoint == 0:
-        save_file_path = os.path.join(opt.result_path,
-                                      'save_{}.pth'.format(epoch))
-        states = {
-            'epoch': epoch + 1,
-            'arch': opt.arch,
-            'state_dict': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-        }
-        torch.save(states, save_file_path)
-    for i in range(opt.n_finetune_classes):
-        total, true = per_class_acc.classes_count_d[i]
-        experiment.log_metric(f'TRAIN {CLASS_MAP[i]} Acc', true/(1.0*total))
+            if epoch % conf.checkpoint == 0:
+                save_file_path = os.path.join(conf.result_path,
+                                              'save_{}.pth'.format(epoch))
+                states = {
+                    'epoch': epoch + 1,
+                    'arch': conf.arch,
+                    'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                }
+                torch.save(states, save_file_path)

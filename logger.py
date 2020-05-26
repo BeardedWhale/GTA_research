@@ -1,13 +1,11 @@
 from typing import Dict, List
 
 import torchnet
-from utils import STEPS
+from utils import STEP
 from comet_ml import Experiment
 import numpy as np
 import torch
 from sklearn.metrics import confusion_matrix
-
-
 
 
 class PerClassAcc(object):
@@ -67,7 +65,7 @@ class APMeter:
 
 
 class Logger:
-    def __init__(self, experiment: Experiment, step: STEPS, n_classes=2, topk: [int] = [1], class_map: List[str] = [],
+    def __init__(self, experiment: Experiment, step: STEP, n_classes=2, topk: [int] = [1], class_map: List[str] = [],
                  metrics=[]):
         """
 
@@ -168,6 +166,11 @@ class Logger:
         for k, v in self.curr_state.items():
             message += f' {k}: {v} |'
         return message
+
+    def main_state(self) -> Dict[str, float]:
+        main_state = {k: v for k,v in self.curr_state.items() if k not in self.other_meters.keys()}
+        main_state = {k: f'{v:.3f}' for k, v in main_state.items() if ('ACC_TOP_1' in k) or ('LOSS' in k)}
+        return main_state
 
 
 def targets_to_one_hot(targets, n_classes) -> torch.tensor:

@@ -1,10 +1,12 @@
 import torch
 from enum import  Enum
 
-class STEPS(Enum):
+class STEP(Enum):
     TRAIN = 'TRAIN'
     VAL = 'VAL'
     TEST = 'TEST'
+
+CLASS_MAP = ['Arson', 'Fight', 'Vandalism', 'Explosion', 'Arrest', 'Robbery', 'Assault', 'Shooting']
 
 def targets_to_one_hot(targets, n_classes) -> torch.tensor:
     # [N, 1] ->[N, n_classes]
@@ -28,3 +30,4 @@ def per_class_accuracies(output, target, n_classes=8):
 
         classes_count_d[class_idx] = (len(class_mask), true_output_class)
     return classes_count_d
+
