@@ -16,8 +16,9 @@ def epoch_step(epoch, loaders: Dict[STEP, DataLoader], model: torch.nn.Module,
                loggers: Dict[STEP, Logger], criterion, optimizer,
                conf):
     n_iter = sum([len(loader) for loader in loaders.values()])
+    print('N iter: ', n_iter)
     steps = list(loaders.keys())
-    assert list(loggers.keys()) == list(loaders.keys()), "excpected same steps for loaders and loggers"
+    assert list(loggers.keys()) == list(loaders.keys()), "expected same steps for loaders and loggers"
     with tqdm(total=n_iter, file=sys.stdout) as t:
         t.set_description(f'EPOCH: {epoch + 1}/{conf.n_epochs}')
         for step in steps:
@@ -39,14 +40,16 @@ def epoch_step(epoch, loaders: Dict[STEP, DataLoader], model: torch.nn.Module,
                     batch_hard_loss = 0.5 * batch_hard_quadriplet_loss(targets, scene_targets, embs)
                     loss += batch_hard_loss
                 else:
-
+                    print(inputs.shape)
                     outputs = model(inputs)
                     loss = criterion(outputs, targets)
                 if step == STEP.TRAIN:
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-                logger.update(loss.data, outputs, targets)
+                if i > 5:
+                    break
+                logger.update(loss.data, outputs.detach().numpy(), targets.detach().numpy())
                 t.update(1)
                 t.set_postfix(ordered_dict=logger.main_state(), refresh=True)
             logger.update_epoch(epoch)

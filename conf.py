@@ -11,7 +11,7 @@ def parse_opts():
         help='(resnet | preresnet | wideresnet | resnext | densenet | ')
     parser.add_argument(
         '--model_type',
-        default='3d',
+        default='ip_csn',
         type=str,
         help='(3d | ir_csn | ip_csn)',
         choices=['3d', 'ir_csn', 'ip_csn']
@@ -25,7 +25,7 @@ def parse_opts():
     )
     parser.add_argument(
         '--finetune_block',
-        default=1,
+        default=2,
         type=int,
         help=
         'Finetune block to use',

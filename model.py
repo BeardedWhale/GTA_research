@@ -143,7 +143,7 @@ class FineTuneBlock2(nn.Module):
         super(FineTuneBlock2, self).__init__()
         self.fc1 = nn.Linear(input_size, 512)
         self.fc2 = nn.Linear(512, 256)
-        self.fc3 = nn.Linear(2304, 128)
+        self.fc3 = nn.Linear(256 + input_size, 128)
         self.fc4 = nn.Linear(128, n_finetune_classes)
         self.dropout_rate = dropout_rate
 
@@ -162,6 +162,7 @@ class FineTuneBlock2(nn.Module):
             x_prime = self.bn2(x_prime)
         print(x.shape)
         residual = torch.cat([x_prime, x], dim=1)
+        print(residual.shape, 'residual')
         x_prime = nn.ReLU()(self.fc3(residual))
         if self.use_batch_norm:
             x_prime = self.bn3(x_prime)
@@ -273,6 +274,7 @@ def update_with_finetune_block(base_model, config):
         block = block.to(device)
         base_model.classifier = block
     else:
+        print('Model fc shape: ', base_model.fc.in_features)
         block = FineTuneBlock(base_model.fc.in_features, config.n_finetune_classes,
                               use_batch_norm=config.use_batch_norm,
                               dropout_rate=config.finetune_dropout)
