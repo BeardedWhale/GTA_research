@@ -57,13 +57,13 @@ def parse_opts():
         help='Root directory path of data')
     parser.add_argument('--fold', default=0, type=int)
     parser.add_argument(
-        '--video_path',
-        default='../GTA_dataset',
+        '--dataset_path',
+        default='/Users/elizavetabatanina/Projects/gta/GTA_dataset',
         type=str,
         help='Directory path of Videos')
     parser.add_argument(
-        '--annotation_path',
-        default='../GTA_JPG_DATASET',
+        '--jpg_dataset_path',
+        default='/Users/elizavetabatanina/Projects/GTA_JPG_DATASET_new',
         type=str,
         help='Annotation file path')
     parser.add_argument(
@@ -202,7 +202,7 @@ def parse_opts():
         '--batch_size', default=32, type=int, help='Batch Size')
     parser.add_argument(
         '--n_epochs',
-        default=200,
+        default=2,
         type=int,
         help='Number of total epochs to run')
     parser.add_argument(

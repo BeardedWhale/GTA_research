@@ -96,10 +96,7 @@ def generate_model(config):
 
         base_model = update_with_finetune_block(base_model, config)
         parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)
-        print(len(list(parameters)), 'params to fine tune', config.ft_begin_index)
 
-        # model = nn.DataParallel(model, device_ids=[0, 1])
-        # print('Device:', base_model.output_device, base_model.device_ids)
         return base_model, parameters
     else:
         if config.pretrain_path:
@@ -274,7 +271,6 @@ def update_with_finetune_block(base_model, config):
         block = block.to(device)
         base_model.classifier = block
     else:
-        print('Model fc shape: ', base_model.fc.in_features)
         block = FineTuneBlock(base_model.fc.in_features, config.n_finetune_classes,
                               use_batch_norm=config.use_batch_norm,
                               dropout_rate=config.finetune_dropout)
