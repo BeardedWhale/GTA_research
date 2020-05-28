@@ -273,7 +273,7 @@ def make_dataset(dataset_path, jpg_path, subset, n_samples_for_each_video=1, sam
     reverse_class_map = dict(zip(class_map.values(), class_map.keys()))
     scene_labels_split = scene_labels.get(subset, {})
     need_relabel = False
-    if os.path.exists(dataset_conf_path):
+    if dataset_conf_path and os.path.exists(dataset_conf_path):
         need_relabel = True
         classes_def = load_dataset_config(dataset_conf_path)
         update_class_map = {class_name:i for (i, class_name) in enumerate(classes_def.keys())}
@@ -371,13 +371,15 @@ class GTA_crime(data.Dataset):
                  temporal_transform=None,
                  target_transform=None,
                  sample_duration=16,
-                 get_loader=get_default_video_loader):
+                 get_loader=get_default_video_loader,
+                 dataset_conf_path=''):
         print('n samples:', n_samples_for_each_video)
         self.sample_duration = sample_duration
         self.subset = subset
         self.data, self.scene_labels, self.scene_map, self.class_map = make_dataset(dataset_path, jpg_path, subset,
                                                                                     n_samples_for_each_video,
-                                                                                    sample_duration)
+                                                                                    sample_duration,
+                                                                                    dataset_conf_path=dataset_conf_path)
         self.n_classes = len(self.class_map)
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
@@ -426,7 +428,6 @@ class GTA_crime(data.Dataset):
         clip = torch.stack(clip, 0).permute(1, 0, 2, 3)
 
         target = self.data[index]
-        print(target, target)
         if self.target_transform is not None:
             target = self.target_transform(target)
         scene_label = sample['scene']

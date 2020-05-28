@@ -100,7 +100,9 @@ def train(config):
             'train',
             spatial_transform=spatial_transform,
             temporal_transform=temporal_transform,
-            target_transform=target_transform, sample_duration=config.sample_duration)
+            target_transform=target_transform,
+            sample_duration=config.sample_duration,
+            dataset_conf_path=config.dataset_conf_path)
 
         train_loader = torch.utils.data.DataLoader(
             training_data,
@@ -121,7 +123,9 @@ def train(config):
             'test',
             spatial_transform=spatial_transform,
             temporal_transform=temporal_transform,
-            target_transform=target_transform, sample_duration=config.sample_duration)
+            target_transform=target_transform,
+            sample_duration=config.sample_duration,
+            dataset_conf_path=config.dataset_conf_path)
         log.info(f'Loaded validation data: {len(val_data)} samples')
         val_loader = torch.utils.data.DataLoader(
             val_data,

@@ -63,7 +63,7 @@ def parse_opts():
         help='Directory path of Videos')
     parser.add_argument(
         '--dataset_conf_path',
-        default='class_map.yaml',
+        default='',
         type=str,
         help='File for dataset config. Default: class_map.yaml')
     parser.add_argument(
