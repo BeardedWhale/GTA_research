@@ -87,6 +87,7 @@ class Logger:
 
         self.n_classes = n_classes
         self.class_map = class_map
+        experiment.log_parameters(class_map)
         self.step = step
         self.topk = topk
         self.experiment = experiment
