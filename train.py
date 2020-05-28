@@ -18,7 +18,7 @@ from typing import Dict
 
 from torch.autograd import Variable
 
-from logger import Logger
+from utils.logger import Logger
 from utils.quadruplet_loss import batch_hard_quadruplet_loss
 from utils.utils import STEP
 import os
