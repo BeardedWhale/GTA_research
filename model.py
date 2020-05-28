@@ -82,36 +82,26 @@ def generate_model(config):
             sample_size=config.sample_size,
             sample_duration=config.sample_duration)
 
-
-
     if config.cuda_available:
         if config.cuda_id1 != -1:
             base_model = nn.DataParallel(base_model, device_ids=[config.cuda_id0, config.cuda_id1])
         else:
             base_model = nn.DataParallel(base_model, device_ids=[config.cuda_id0])
-        if config.pretrain_path:
-            base_model = load_pretrained(base_model, config.base_model, config.model_depth, config.pretrain_path)
-        parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)  # TODO change freezing
+    if config.pretrain_path:
+        base_model = load_pretrained(base_model, config.base_model, config.model_depth, config.pretrain_path)
 
+    if config.use_embeddings:
+        model = EmbeddingModel(base_model, config)
+    else:
+        model = update_with_finetune_block(base_model, config)
+    parameters = get_fine_tuning_parameters(model,
+                                            config.ft_begin_index)  # should not fail due to assert in the beginning
 
-    if not config.cuda_available:
-        if config.pretrain_path:
-            base_model = load_pretrained(base_model, config.base_model, config.model_depth, config.pretrain_path)
-
-        base_model = update_with_finetune_block(base_model, config)
-        parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)
-
-        return base_model, parameters
-
-
-    base_model = update_with_finetune_block(base_model, config)
-    parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)
-
-    return base_model, parameters
+    return model, parameters
 
 
 class FineTuneBlock1(nn.Module):
-    def __init__(self, input_size, n_finetune_classes, cuda=True, cuda_ids=[0], dropout_rate=0.3,
+    def __init__(self, input_size, n_finetune_classes, dropout_rate=0.3,
                  use_batch_norm: bool = True):
         super(FineTuneBlock1, self).__init__()
         self.fc1 = nn.Linear(input_size, 512)
@@ -135,7 +125,7 @@ class FineTuneBlock1(nn.Module):
 
 
 class FineTuneBlock2(nn.Module):
-    def __init__(self, input_size, n_finetune_classes, cuda=True, cuda_ids=[0], dropout_rate=0.3,
+    def __init__(self, input_size, n_finetune_classes, dropout_rate=0.3,
                  use_batch_norm: bool = True):
         super(FineTuneBlock2, self).__init__()
         self.fc1 = nn.Linear(input_size, 512)
@@ -146,7 +136,7 @@ class FineTuneBlock2(nn.Module):
 
         self.use_batch_norm = use_batch_norm
         if self.use_batch_norm:
-            self.bn1 = nn.BatchNorm1d(512)
+            self.bn1 = nn.BatchNorm1d(512)  # todo add this param to conf
             self.bn2 = nn.BatchNorm1d(256)
             self.bn3 = nn.BatchNorm1d(128)
 
@@ -167,30 +157,41 @@ class FineTuneBlock2(nn.Module):
 
 
 class EmbeddingModel(nn.Module):
-    def __init__(self, model, n_finetune_classes, cuda=True, cuda_id=0):
+    def __init__(self, base_model, config):
+        """
+        Creates model that has two parts: encoder and classifier. Encoder returns embeddings of sample and classifier returns class probs
+        :param base_model:
+        :param config:
+        :param cuda:
+        :param cuda_id:
+        """
         super(EmbeddingModel, self).__init__()
 
-        model.module.fc = nn.Linear(model.module.fc.in_features,
-                                    512)
-        self.model = model
-        self.classifier = nn.Sequential(nn.Dropout(0.4),
-                                        nn.Linear(512,
-                                                  512),
-
-                                        nn.ReLU6(),
-                                        nn.Dropout(0.4),
-                                        nn.Linear(512,
-                                                  128),
-                                        nn.ReLU6(),
-                                        nn.Linear(128, n_finetune_classes))
+        cuda = config.cuda_available
         if cuda:
-            self.classifier = self.classifier.cuda(device=cuda_id)
-            self.model = self.model.cuda(device=cuda_id)
+            device = torch.device(f"cuda:{config.cuda_id0}")
+        else:
+            device = torch.device('cpu')
+        in_features = base_model.module.fc.in_features if cuda else base_model.fc.in_features  # todo handle densenet
+        block_n_features = 512
+
+        fc = nn.Sequential(nn.Dropout(0.4),
+                           nn.Linear(in_features,
+                                     block_n_features),
+                           nn.ReLU6())
+        # TODO handle densenet
+        if cuda:
+            base_model.module.fc = fc
+        else:
+            base_model.fc = fc
+        self.encoder = base_model
+        self.classifier = get_block(block_n_features, config)
+        if cuda:  # TODO
+            self.classifier = self.classifier.to(device)
 
     def forward(self, x):
-        embedding = self.model(x)
+        embedding = self.encoder(x)
         y = self.classifier(embedding)
-
         return embedding, y
 
 
@@ -255,22 +256,28 @@ def get_densenet_model(model_depth):
         return densenet.densenet264
 
 
+def get_block(in_features: int, config) -> nn.Module:
+    FineTuneBlock = FineTuneBlock1 if config.finetune_block == 1 else FineTuneBlock2
+    block = FineTuneBlock(in_features, config.n_finetune_classes,
+                          use_batch_norm=config.use_batch_norm,
+                          dropout_rate=config.finetune_dropout)
+    return block
+
+
 def update_with_finetune_block(base_model, config):  # TODO fix .module is used only for gpus dataparallel!!
     if config.cuda_available:
         device = torch.device(f"cuda:{config.cuda_id0}")
     else:
         device = torch.device('cpu')
-    FineTuneBlock = FineTuneBlock1 if config.finetune_block == 1 else FineTuneBlock2
+
     if config.base_model == 'densenet':
-        block = FineTuneBlock(base_model.module.classifier.in_features, config.n_finetune_classes,
-                              use_batch_norm=config.use_batch_norm,
-                              dropout_rate=config.finetune_dropout)
+        in_features = base_model.module.classifier.in_features
+        block = get_block(in_features, config)
         block = block.to(device)
         base_model.module.classifier = block
     else:
-        block = FineTuneBlock(base_model.module.fc.in_features, config.n_finetune_classes,
-                              use_batch_norm=config.use_batch_norm,
-                              dropout_rate=config.finetune_dropout)
+        in_features = base_model.module.fc.in_features
+        block = get_block(in_features, config)
         block = block.to(device)
         base_model.module.fc = block
 

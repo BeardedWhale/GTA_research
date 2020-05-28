@@ -19,7 +19,7 @@ from typing import Dict
 from torch.autograd import Variable
 
 from logger import Logger
-from utils.quadriplet_loss import batch_hard_quadriplet_loss
+from utils.quadruplet_loss import batch_hard_quadruplet_loss
 from utils.utils import STEP
 import os
 import sys
@@ -29,28 +29,23 @@ from torch.utils.data import DataLoader
 
 
 def train(config):
+    if config.use_quadruplet:
+        assert config.use_embeddings, "Cannot use quadruplet loss without Embedding model"
+
+
     experiment = Experiment(api_key="Cbyqfs9Z8auN5ivKsbv2Z6Ogi",
                             project_name="gta-crime-classification", workspace="beardedwhale")
 
-    params = {'lr': config.learning_rate,
-              'dampening': config.dampening,
-              'optimizer': config.optimizer,
-              'lr_patience': config.lr_patience,
-              'batch_size': config.batch_size,
-              'n_epochs': config.n_epochs,
-              'begin_epoch': config.begin_epoch,
-              'resume_path': config.resume_path,
-              'pretrain_path': config.pretrain_path,
-              'ft_index': config.ft_begin_index,
-              'cuda_available': config.cuda_available,
-              'cuda_id0': config.cuda_id0,
+    params = {'ft_index': config.ft_begin_index,
               'model': config.base_model,
               'model_type': config.model_type,
               'model_depth': config.model_depth,
-              'resnet_shortcut': config.resnet_shortcut,
               'finetuning_block': config.finetune_block}
     experiment.log_parameters(params)
+    experiment.log_parameters(vars(config))
     experiment.add_tag(config.model_type)
+    if config.use_quadruplet:
+        experiment.add_tag('quadruplet_loss')
 
     model, params = generate_model(config)
     summary(model, input_size=(3, config.sample_duration, config.sample_size, config.sample_size))
@@ -63,20 +58,25 @@ def train(config):
     config.arch = '{}-{}'.format(config.base_model, config.model_depth)
 
     config.mean = get_mean(config.norm_value, dataset=config.mean_dataset)
-    config.std = get_std(config.norm_value, 'gta')
-    with open(os.path.join(config.result_path, 'opts.json'), 'w') as opt_file:
+    config.std = get_std(config.norm_value, 'gta')  # TODO handle gta?
+    with open(os.path.join(config.result_path, 'config.json'), 'w') as opt_file:
         json.dump(vars(config), opt_file)
-
+    
     if config.no_mean_norm and not config.std_norm:
         norm_method = Normalize([0, 0, 0], [1, 1, 1])
     elif not config.std_norm:
         norm_method = Normalize(config.mean, [1, 1, 1])
     else:
         norm_method = Normalize(config.mean, config.std)
-
+        
     loaders: Dict[STEP, torch.utils.data.DataLoader] = {}
     loggers: Dict[STEP, Logger] = {}
     steps: [STEP] = []
+    metrics = []
+    if config.use_quadruplet:
+        metrics.append('QUADRUPLET_LOSS')
+        metrics.append('CLASSIFICATION_LOSS')
+        
     if not config.no_train:
         assert config.train_crop in ['random', 'corner', 'center']
         if config.train_crop == 'random':
@@ -101,7 +101,7 @@ def train(config):
             spatial_transform=spatial_transform,
             temporal_transform=temporal_transform,
             target_transform=target_transform, sample_duration=config.sample_duration)
-        log.info(f'Loaded training data: {len(training_data)} samples')
+
         train_loader = torch.utils.data.DataLoader(
             training_data,
             batch_size=config.batch_size,
@@ -110,7 +110,7 @@ def train(config):
             pin_memory=True)
 
         train_logger = Logger(experiment, STEP.TRAIN, n_classes=config.n_finetune_classes, topk=[1, 2, 3],
-                              class_map=CLASS_MAP)
+                              class_map=CLASS_MAP, metrics=metrics)
         loaders[STEP.TRAIN] = train_loader
         loggers[STEP.TRAIN] = train_logger
         steps.append(STEP.TRAIN)
@@ -130,7 +130,7 @@ def train(config):
             num_workers=config.n_threads,
             pin_memory=True)
         val_logger = Logger(experiment, STEP.VAL, n_classes=config.n_finetune_classes, topk=[1, 2, 3],
-                            class_map=CLASS_MAP)
+                            class_map=CLASS_MAP, metrics=metrics)
         loaders[STEP.VAL] = val_loader
         loggers[STEP.VAL] = val_logger
         steps.append(STEP.VAL)
@@ -159,16 +159,25 @@ def epoch_step(epoch, loaders: Dict[STEP, DataLoader], model: torch.nn.Module,
             else:
                 model.eval()
             for i, (inputs, targets, scene_targets) in enumerate(loader):
+                additional_metrics = {}
                 if conf.cuda_available:
                     targets = targets.cuda(device=conf.cuda_id0, non_blocking=True)
                 inputs = Variable(inputs)
                 targets = Variable(targets)
 
-                if conf.use_quadriplet:
+                if conf.use_embeddings:
                     embs, outputs = model(inputs)
                     loss = criterion(outputs, targets)
-                    batch_hard_loss = 0.5 * batch_hard_quadriplet_loss(targets, scene_targets, embs)
-                    loss += batch_hard_loss
+                    
+                    if conf.use_quadruplet:
+                       
+                        batch_hard_loss = conf.quadruplet_alpha * batch_hard_quadruplet_loss(targets, scene_targets, embs,
+                                                                                             beta=conf.quadruplet_beta)
+
+                        additional_metrics['QUADRUPLET_LOSS'] = batch_hard_loss.data.cpu() if conf.cuda_available else batch_hard_loss.data
+                        additional_metrics['CLASSIFICATION_LOSS'] = loss.data.cpu() if conf.cuda_available else loss.data
+
+                        loss += batch_hard_loss
                 else:
                     outputs = model(inputs)
                     loss = criterion(outputs, targets)
@@ -177,9 +186,9 @@ def epoch_step(epoch, loaders: Dict[STEP, DataLoader], model: torch.nn.Module,
                     loss.backward()
                     optimizer.step()
                 if conf.cuda_available:
-                    logger.update(loss.data.cpu(), outputs.detach().cpu().numpy(), targets.detach().cpu().numpy())
+                    logger.update(loss.data.cpu(), outputs.detach().cpu().numpy(), targets.detach().cpu().numpy(), **additional_metrics)
                 else:
-                    logger.update(loss.data, outputs.detach().numpy(), targets.detach().numpy())
+                    logger.update(loss.data, outputs.detach().numpy(), targets.detach().numpy(), **additional_metrics)
                 t.update(1)
                 t.set_postfix(ordered_dict=logger.main_state(), refresh=True)
             logger.update_epoch(epoch)

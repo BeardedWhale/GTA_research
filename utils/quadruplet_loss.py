@@ -136,11 +136,11 @@ def accuracy(labels, embeddings, squared=False, T=np.array([0.55, 0.6, 0.7, 0.8,
 
     return true / n_triplets
 
-def batch_hard_quadriplet_loss(class_labels, scene_labels, embeddings,
+def batch_hard_quadruplet_loss(class_labels, scene_labels, embeddings,
                                margin_class=0.3, margin_scene=0.05,
-                               beta=0.4, squared=False):
+                               beta=0.4):
     '''
-    Computes quadriplet loss:
+    Computes quadruplet loss:
     triplet_loss_class + beta*triplet_loss_scene
     :param class_labels:
     :param scene_labels:
@@ -153,7 +153,7 @@ def batch_hard_quadriplet_loss(class_labels, scene_labels, embeddings,
 
     loss = batch_hard_triplet_loss(class_labels, embeddings, margin=margin_class)
 
-    if len(np.unique(scene_labels)) !=  len(scene_labels):
+    if len(np.unique(scene_labels)) != len(scene_labels):
         loss += beta * batch_hard_triplet_loss(scene_labels, embeddings, margin=margin_scene)
 
     return loss
