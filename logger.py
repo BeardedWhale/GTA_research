@@ -1,7 +1,7 @@
 from typing import Dict, List
 
 import torchnet
-from utils import STEP
+from utils.utils import STEP
 from comet_ml import Experiment
 import numpy as np
 import torch

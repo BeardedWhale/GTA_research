@@ -213,10 +213,28 @@ def parse_opts():
         'Training begins at this epoch. Previous trained model indicated by resume_path is loaded.'
     )
     parser.add_argument(
-        '--use_quadriplet',
+        '--use_embeddings',
         default=False,
         type=bool,
-        help='if use quadriplet loss'
+        help='if use embeddings model or not'
+    )
+    parser.add_argument(
+        '--use_quadruplet',
+        default=False,
+        type=bool,
+        help='if use quadruplet loss'
+    )
+    parser.add_argument(
+        '--quadruplet_alpha',
+        default=0.5,
+        type=float,
+        help='quadruplet loss weight'
+    )
+    parser.add_argument(
+        '--quadruplet_beta',
+        default=0.4,
+        type=float,
+        help='quadruplet loss weight'
     )
     parser.add_argument(
         '--n_val_samples',
