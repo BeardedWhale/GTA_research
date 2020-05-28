@@ -12,7 +12,7 @@ class PerClassAcc(object):
 
     def __init__(self, n_classes):
         self.n_classes = n_classes
-        self.classes_count_d = dict(zip(range(n_classes), [(0, 0) for i in range(n_classes)]))
+        self.classes_count_d = dict(zip(range(n_classes), [(0, 0) for _ in range(n_classes)]))
 
     def update(self, new_count_d):
         for class_idx in range(self.n_classes):
@@ -53,7 +53,8 @@ class APMeter:
 
     def __average_accuracy__(self) -> np.ndarray:
         output_labels = np.argmax(self.total_outputs, axis=1)
-        cm = confusion_matrix(self.total_targets, output_labels, normalize='true')
+        cm = confusion_matrix(self.total_targets, output_labels, normalize='true', labels=[i for i in range(self.n_classes)])
+
         return cm.diagonal()
 
     def value(self) -> np.ndarray:

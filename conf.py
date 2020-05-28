@@ -58,12 +58,12 @@ def parse_opts():
     parser.add_argument('--fold', default=0, type=int)
     parser.add_argument(
         '--dataset_path',
-        default='/Users/elizavetabatanina/Projects/gta/GTA_dataset',
+        default='../GTA_dataset',
         type=str,
         help='Directory path of Videos')
     parser.add_argument(
         '--jpg_dataset_path',
-        default='/Users/elizavetabatanina/Projects/GTA_JPG_DATASET_new',
+        default='../GTA_JPG_DATASET',
         type=str,
         help='Annotation file path')
     parser.add_argument(
@@ -269,9 +269,9 @@ def parse_opts():
     parser.add_argument(
         '--cuda_available', action='store_true', help='If true, cuda is used.', default=True)
     parser.add_argument(
-        '--cuda_id0', default=0, help='0 or 1 or other number for cuda device'
+        '--cuda_id0', default=0, type=int, help='0 or 1 or other number for cuda device'
     )
-    parser.add_argument('--cuda_id1', default=1, help='0 or 1 or other number for cuda device, -1 if second GPU is not available')
+    parser.add_argument('--cuda_id1', default=-1, type=int, help='0 or 1 or other number for cuda device, -1 if second GPU is not available')
     parser.set_defaults(cuda_available=False)
     parser.add_argument(
         '--n_threads',

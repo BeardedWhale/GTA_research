@@ -330,7 +330,7 @@ class GTA_crime(data.Dataset):
                  dataset_path,
                  jpg_path,
                  subset,
-                 n_samples_for_each_video=15,
+                 n_samples_for_each_video=7,
                  spatial_transform=None,
                  temporal_transform=None,
                  target_transform=None,

@@ -1,3 +1,5 @@
+from time import sleep
+
 import torch
 from torch import nn
 import os
@@ -80,6 +82,8 @@ def generate_model(config):
             sample_size=config.sample_size,
             sample_duration=config.sample_duration)
 
+
+
     if config.cuda_available:
         if config.cuda_id1 != -1:
             base_model = nn.DataParallel(base_model, device_ids=[config.cuda_id0, config.cuda_id1])
@@ -89,16 +93,8 @@ def generate_model(config):
             base_model = load_pretrained(base_model, config.base_model, config.model_depth, config.pretrain_path)
         parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)  # TODO change freezing
 
+
     if not config.cuda_available:
-
-        if config.pretrain_path:
-            base_model = load_pretrained(base_model, config.base_model, config.model_depth, config.pretrain_path)
-
-        base_model = update_with_finetune_block(base_model, config)
-        parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)
-
-        return base_model, parameters
-    else:
         if config.pretrain_path:
             base_model = load_pretrained(base_model, config.base_model, config.model_depth, config.pretrain_path)
 
@@ -107,7 +103,11 @@ def generate_model(config):
 
         return base_model, parameters
 
-    return base_model, base_model.parameters()
+
+    base_model = update_with_finetune_block(base_model, config)
+    parameters = get_fine_tuning_parameters(base_model, config.ft_begin_index)
+
+    return base_model, parameters
 
 
 class FineTuneBlock1(nn.Module):
@@ -157,9 +157,8 @@ class FineTuneBlock2(nn.Module):
         x_prime = nn.Dropout(self.dropout_rate)(nn.ReLU()(self.fc2(x_prime)))
         if self.use_batch_norm:
             x_prime = self.bn2(x_prime)
-        print(x.shape)
+
         residual = torch.cat([x_prime, x], dim=1)
-        print(residual.shape, 'residual')
         x_prime = nn.ReLU()(self.fc3(residual))
         if self.use_batch_norm:
             x_prime = self.bn3(x_prime)
@@ -170,7 +169,7 @@ class FineTuneBlock2(nn.Module):
 class EmbeddingModel(nn.Module):
     def __init__(self, model, n_finetune_classes, cuda=True, cuda_id=0):
         super(EmbeddingModel, self).__init__()
-        print(model)
+
         model.module.fc = nn.Linear(model.module.fc.in_features,
                                     512)
         self.model = model
@@ -185,13 +184,11 @@ class EmbeddingModel(nn.Module):
                                         nn.ReLU6(),
                                         nn.Linear(128, n_finetune_classes))
         if cuda:
-            print('CUDA')
             self.classifier = self.classifier.cuda(device=cuda_id)
             self.model = self.model.cuda(device=cuda_id)
 
     def forward(self, x):
         embedding = self.model(x)
-        print(embedding.shape)
         y = self.classifier(embedding)
 
         return embedding, y
@@ -258,24 +255,24 @@ def get_densenet_model(model_depth):
         return densenet.densenet264
 
 
-def update_with_finetune_block(base_model, config):
+def update_with_finetune_block(base_model, config):  # TODO fix .module is used only for gpus dataparallel!!
     if config.cuda_available:
-        device = torch.device(f"cuda:{config.cuda_idd0}")
+        device = torch.device(f"cuda:{config.cuda_id0}")
     else:
         device = torch.device('cpu')
     FineTuneBlock = FineTuneBlock1 if config.finetune_block == 1 else FineTuneBlock2
     if config.base_model == 'densenet':
-        block = FineTuneBlock(base_model.classifier.in_features, config.n_finetune_classes,
+        block = FineTuneBlock(base_model.module.classifier.in_features, config.n_finetune_classes,
                               use_batch_norm=config.use_batch_norm,
                               dropout_rate=config.finetune_dropout)
         block = block.to(device)
-        base_model.classifier = block
+        base_model.module.classifier = block
     else:
-        block = FineTuneBlock(base_model.fc.in_features, config.n_finetune_classes,
+        block = FineTuneBlock(base_model.module.fc.in_features, config.n_finetune_classes,
                               use_batch_norm=config.use_batch_norm,
                               dropout_rate=config.finetune_dropout)
         block = block.to(device)
-        base_model.fc = block
+        base_model.module.fc = block
 
     return base_model
 

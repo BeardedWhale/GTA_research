@@ -1,7 +1,3 @@
-import random
-import math
-
-
 class Compose(object):
 
     def __init__(self, transforms):

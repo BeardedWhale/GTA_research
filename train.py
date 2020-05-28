@@ -1,37 +1,64 @@
-from typing import Dict
-
 from comet_ml import Experiment
 from torch import optim
 from loguru import logger as log
-from conf import parse_opts
-from logger import Logger
 from model import generate_model
 from torchsummary import summary
-import torch
-from mean import get_mean, get_std, online_mean_and_sd
-import os
+from utils.mean import get_mean, get_std
 import json
 from dataset.gta_dataset import GTA_crime
-from spatial_transforms import Normalize, MultiScaleRandomCrop, Compose, RandomHorizontalFlip, ToTensor, \
+from utils.spatial_transforms import Normalize, MultiScaleRandomCrop, Compose, RandomHorizontalFlip, ToTensor, \
     MultiScaleCornerCrop
-from target_transforms import ClassLabel
-from temporal_transforms import TemporalRandomCrop
+from utils.target_transforms import ClassLabel
+from utils.temporal_transforms import TemporalRandomCrop
 
-from process.steps import epoch_step
 import torch.nn as nn
-from utils import STEP, CLASS_MAP
+from utils.utils import CLASS_MAP
+
+from typing import Dict
+
+from torch.autograd import Variable
+
+from logger import Logger
+from utils.quadriplet_loss import batch_hard_quadriplet_loss
+from utils.utils import STEP
+import os
+import sys
+from tqdm import tqdm
+import torch
+from torch.utils.data import DataLoader
 
 
 def train(config):
     experiment = Experiment(api_key="Cbyqfs9Z8auN5ivKsbv2Z6Ogi",
-                            project_name="test", workspace="beardedwhale")
+                            project_name="gta-crime-classification", workspace="beardedwhale")
+
+    params = {'lr': config.learning_rate,
+              'dampening': config.dampening,
+              'optimizer': config.optimizer,
+              'lr_patience': config.lr_patience,
+              'batch_size': config.batch_size,
+              'n_epochs': config.n_epochs,
+              'begin_epoch': config.begin_epoch,
+              'resume_path': config.resume_path,
+              'pretrain_path': config.pretrain_path,
+              'ft_index': config.ft_begin_index,
+              'cuda_available': config.cuda_available,
+              'cuda_id0': config.cuda_id0,
+              'model': config.base_model,
+              'model_type': config.model_type,
+              'model_depth': config.model_depth,
+              'resnet_shortcut': config.resnet_shortcut,
+              'finetuning_block': config.finetune_block}
+    experiment.log_parameters(params)
+    experiment.add_tag(config.model_type)
+
     model, params = generate_model(config)
     summary(model, input_size=(3, config.sample_duration, config.sample_size, config.sample_size))
     dataset_path = config.dataset_path
     jpg_path = config.jpg_dataset_path
 
     config.scales = [config.initial_scale]
-    for i in range(1, config.n_scales):
+    for _ in range(1, config.n_scales):
         config.scales.append(config.scales[-1] * config.scale_step)
     config.arch = '{}-{}'.format(config.base_model, config.model_depth)
 
@@ -66,6 +93,7 @@ def train(config):
         ])
         temporal_transform = TemporalRandomCrop(config.sample_duration)
         target_transform = ClassLabel()
+        assert os.path.exists(dataset_path)
         training_data = GTA_crime(
             dataset_path,
             jpg_path,
@@ -103,8 +131,8 @@ def train(config):
             pin_memory=True)
         val_logger = Logger(experiment, STEP.VAL, n_classes=config.n_finetune_classes, topk=[1, 2, 3],
                             class_map=CLASS_MAP)
-        loaders[STEP.TRAIN] = val_loader
-        loggers[STEP.TRAIN] = val_logger
+        loaders[STEP.VAL] = val_loader
+        loggers[STEP.VAL] = val_logger
         steps.append(STEP.VAL)
 
     criterion = nn.CrossEntropyLoss()
@@ -113,7 +141,57 @@ def train(config):
         epoch_step(epoch, conf=config, criterion=criterion, loaders=loaders, model=model,
                    loggers=loggers, optimizer=optimizer)
 
-        # if STEP.TRAIN in loggers  and STEP.VAL in loggers:
-        #     train_logger = loggers[STEP.TRAIN]
-        #     val_logger = loggers[STEP.VAL]
-        #     train_logger.accuracy_meter.accuracy
+
+def epoch_step(epoch, loaders: Dict[STEP, DataLoader], model: torch.nn.Module,
+               loggers: Dict[STEP, Logger], criterion, optimizer,
+               conf):
+    n_iter = sum([len(loader) for loader in loaders.values()])
+    print('N iter: ', n_iter)
+    steps = list(loaders.keys())
+    assert list(loggers.keys()) == list(loaders.keys()), "expected same steps for loaders and loggers"
+    with tqdm(total=n_iter, file=sys.stdout) as t:
+        t.set_description(f'EPOCH: {epoch + 1}/{conf.n_epochs}')
+        for step in steps:
+            loader = loaders[step]
+            logger = loggers[step]
+            if step == STEP.TRAIN:
+                model.train()
+            else:
+                model.eval()
+            for i, (inputs, targets, scene_targets) in enumerate(loader):
+                if conf.cuda_available:
+                    targets = targets.cuda(device=conf.cuda_id0, non_blocking=True)
+                inputs = Variable(inputs)
+                targets = Variable(targets)
+
+                if conf.use_quadriplet:
+                    embs, outputs = model(inputs)
+                    loss = criterion(outputs, targets)
+                    batch_hard_loss = 0.5 * batch_hard_quadriplet_loss(targets, scene_targets, embs)
+                    loss += batch_hard_loss
+                else:
+                    outputs = model(inputs)
+                    loss = criterion(outputs, targets)
+                if step == STEP.TRAIN:
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                if conf.cuda_available:
+                    logger.update(loss.data.cpu(), outputs.detach().cpu().numpy(), targets.detach().cpu().numpy())
+                else:
+                    logger.update(loss.data, outputs.detach().numpy(), targets.detach().numpy())
+                t.update(1)
+                t.set_postfix(ordered_dict=logger.main_state(), refresh=True)
+            logger.update_epoch(epoch)
+            logger.reset()
+
+            if epoch % conf.checkpoint == 0:
+                save_file_path = os.path.join(conf.result_path,
+                                              'save_{}.pth'.format(epoch))
+                states = {
+                    'epoch': epoch + 1,
+                    'arch': conf.arch,
+                    'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                }
+                torch.save(states, save_file_path)
