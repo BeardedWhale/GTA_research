@@ -76,7 +76,6 @@ def dataset_jpg(dataset_path, jpg_path):
     for class_folder in dataset_folders:
         curr_class = os.path.split(class_folder)[-1]
         os.mkdir(os.path.join(jpg_path, curr_class))
-        print(os.path.join(jpg_path, curr_class), 'created')
         scene_folders = glob(os.path.join(class_folder, '*'))
         scene_folders = [scene_folder for scene_folder in scene_folders if '.DS' not in scene_folder]
         for scene_folder in scene_folders:
@@ -164,7 +163,6 @@ def dataset_to_json_kfolds(dataset_path, split_type=1, k=4):
     '''
     data = {}
     video_labels = {}
-    print('KEK')
     scene_labels = {}
     scene_map = {}
     inner_files = glob(os.path.join(dataset_path, '*'))
@@ -332,7 +330,7 @@ class GTA_crime(data.Dataset):
                  dataset_path,
                  jpg_path,
                  subset,
-                 n_samples_for_each_video=15,
+                 n_samples_for_each_video=7,
                  spatial_transform=None,
                  temporal_transform=None,
                  target_transform=None,
@@ -376,6 +374,7 @@ class GTA_crime(data.Dataset):
         path = sample['video']
         # print(path)
         frame_indices = sample['frame_indices']
+        assert len(frame_indices) > 0, "Empty clip"
         if self.temporal_transform is not None:
             frame_indices = self.temporal_transform(frame_indices)
         clip = self.loader(path, frame_indices)

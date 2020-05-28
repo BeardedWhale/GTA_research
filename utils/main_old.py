@@ -1,30 +1,24 @@
 import os
-from comet_ml import Experiment, ExistingExperiment
-import sys
+from comet_ml import Experiment
 import json
-import numpy as np
-import torch
 from torch import nn
 from torch import optim
-from torchsummary import summary
 from torch.optim import lr_scheduler
 
 from opts import parse_opts
-from model import generate_model, EmbeddingModel
-from mean import get_mean, get_std, online_mean_and_sd
-from spatial_transforms import (
+from model import generate_model
+from utils.mean import get_mean, get_std
+from utils.spatial_transforms import (
     Compose, Normalize, Scale, CenterCrop, CornerCrop, MultiScaleCornerCrop,
     MultiScaleRandomCrop, RandomHorizontalFlip, ToTensor)
-from temporal_transforms import LoopPadding, TemporalRandomCrop
-from target_transforms import ClassLabel, VideoID
-from target_transforms import Compose as TargetCompose
+from utils.temporal_transforms import LoopPadding, TemporalRandomCrop
+from utils.target_transforms import ClassLabel, VideoID
 from dataset import get_training_set, get_validation_set, get_test_set
 from utils import Logger
 from train import train_epoch
 from validation import val_epoch
 from torchsummary import summary
 import test
-import subprocess
 import torch
 if __name__ == '__main__':
     opt = parse_opts()

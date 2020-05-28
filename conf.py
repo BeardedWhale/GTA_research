@@ -11,10 +11,25 @@ def parse_opts():
         help='(resnet | preresnet | wideresnet | resnext | densenet | ')
     parser.add_argument(
         '--model_type',
-        default='3d',
+        default='ip_csn',
         type=str,
         help='(3d | ir_csn | ip_csn)',
         choices=['3d', 'ir_csn', 'ip_csn']
+    )
+    parser.add_argument(
+        '--n_finetune_classes',
+        default=8,
+        type=int,
+        help=
+        'Number of classes for fine-tuning. n_classes is set to the number when pretraining.'
+    )
+    parser.add_argument(
+        '--finetune_block',
+        default=2,
+        type=int,
+        help=
+        'Finetune block to use',
+        choices=[1, 2]
     )
     parser.add_argument(
         '--model_depth',
@@ -42,12 +57,12 @@ def parse_opts():
         help='Root directory path of data')
     parser.add_argument('--fold', default=0, type=int)
     parser.add_argument(
-        '--video_path',
+        '--dataset_path',
         default='../GTA_dataset',
         type=str,
         help='Directory path of Videos')
     parser.add_argument(
-        '--annotation_path',
+        '--jpg_dataset_path',
         default='../GTA_JPG_DATASET',
         type=str,
         help='Annotation file path')
@@ -62,7 +77,7 @@ def parse_opts():
         type=str,
         help='Save data (.pth) of previous training')
     parser.add_argument(
-        '--pretrain_path', default='pretrained_models/resnet-50-kinetics.pth', type=str, help='Pretrained model (.pth)')
+        '--pretrain_path', default='', type=str, help='Pretrained model (.pth)')
     parser.add_argument(
         '--checkpoint',
         default=1,
@@ -77,13 +92,22 @@ def parse_opts():
         help=
         'Number of classes (activitynet: 200, kinetics: 400, ucf101: 101, hmdb51: 51, GTA: 7)'
     )
+
     parser.add_argument(
-        '--n_finetune_classes',
-        default=8,
-        type=int,
+        '--finetune_dropout',
+        default=0.3,
+        type=float,
         help=
-        'Number of classes for fine-tuning. n_classes is set to the number when pretraining.'
+        'Dropout rate for finetuning block'
     )
+    parser.add_argument(
+        '--use_batch_norm',
+        default=False,
+        type=bool,
+        help=
+        'If use batchnorm in funetune block or not'
+    )
+
 
     # SAMPLE PARAMS
     parser.add_argument(
@@ -178,7 +202,7 @@ def parse_opts():
         '--batch_size', default=32, type=int, help='Batch Size')
     parser.add_argument(
         '--n_epochs',
-        default=200,
+        default=2,
         type=int,
         help='Number of total epochs to run')
     parser.add_argument(
@@ -245,10 +269,10 @@ def parse_opts():
     parser.add_argument(
         '--cuda_available', action='store_true', help='If true, cuda is used.', default=True)
     parser.add_argument(
-        '--cuda_id0', default=0, help='0 or 1 or other number for cuda device'
+        '--cuda_id0', default=0, type=int, help='0 or 1 or other number for cuda device'
     )
-    parser.add_argument('--cuda_id1', default=1, help='0 or 1 or other number for cuda device, -1 if second GPU is not available')
-    parser.set_defaults(cuda_available=True)
+    parser.add_argument('--cuda_id1', default=-1, type=int, help='0 or 1 or other number for cuda device, -1 if second GPU is not available')
+    parser.set_defaults(cuda_available=False)
     parser.add_argument(
         '--n_threads',
         default=0,

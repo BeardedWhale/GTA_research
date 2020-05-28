@@ -1,6 +1,5 @@
-from conf import parse_opts
-
+from experiments import run_classification_experment
 
 if __name__ == '__main__':
-    config = parse_opts()
-    print(f'CUDA: {config.cuda_id}')
+
+    run_classification_experment()
