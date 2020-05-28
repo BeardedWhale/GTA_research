@@ -1,6 +1,10 @@
+import itertools
 import os
 from glob import glob
 import json
+from typing import Tuple, List, Dict
+
+import yaml
 from loguru import logger
 import sys
 import subprocess
@@ -21,6 +25,14 @@ from PIL import Image
 DATASET_PATH = '../GTA_dataset'
 JPG_PATH = '../GTA_JPG_DATASET'
 logger.add(sys.stdout)
+
+
+
+def load_dataset_config(config_path)->Dict[str, List[str]]:
+    with open(config_path) as file:
+        dataset_conf = yaml.load(file, Loader=yaml.FullLoader)
+    class_map = dataset_conf['class_map']
+    return class_map
 
 
 def pil_loader(path):
@@ -215,7 +227,7 @@ def dataset_to_json_kfolds(dataset_path, split_type=1, k=4):
         file.write(json.dumps(data))
 
 
-def make_dataset(dataset_path, jpg_path, subset, n_samples_for_each_video=1, sample_duration=16, fold=1):
+def make_dataset(dataset_path, jpg_path, subset, n_samples_for_each_video=1, sample_duration=16, fold=1, dataset_conf_path='class_map.yaml'):
     '''
     creates dict of necessary dataset parameters
     :param dataset_path: path to original dataset with videos and json description
@@ -225,6 +237,7 @@ def make_dataset(dataset_path, jpg_path, subset, n_samples_for_each_video=1, sam
     '''
     time_slots_df = pd.read_csv('time_slots.csv')
 
+
     def get_time_slot(video_name: str):
         class_name, id = video_name.split('/')[1:3]
         row = time_slots_df.loc[(time_slots_df['class name'] == class_name) & (time_slots_df['vid id'] == int(id))].iloc[
@@ -232,6 +245,13 @@ def make_dataset(dataset_path, jpg_path, subset, n_samples_for_each_video=1, sam
         start = row['start second']
         end = row['end second']
         return start, end
+
+    def remap_label(label:int, reverse_old_map, update_class_map, reverse_classes_def)->int:
+        label_class_name = reverse_old_map[label]
+        new_class_name = reverse_classes_def[label_class_name]
+        new_label = update_class_map[new_class_name]
+        return new_label
+
 
     if not os.path.exists(dataset_path) or not os.path.isdir(dataset_path):
         logger.exception(f'Dataset Folder {dataset_path} not found or is not a directory')
@@ -250,14 +270,28 @@ def make_dataset(dataset_path, jpg_path, subset, n_samples_for_each_video=1, sam
     scene_labels = dataset_json['scene_folds'][fold]
     scene_map = dataset_json['scene_map']
     class_map = dataset_json['class_map']
+    reverse_class_map = dict(zip(class_map.values(), class_map.keys()))
     scene_labels_split = scene_labels.get(subset, {})
+    need_relabel = False
+    if os.path.exists(dataset_conf_path):
+        need_relabel = True
+        classes_def = load_dataset_config(dataset_conf_path)
+        update_class_map = {class_name:i for (i, class_name) in enumerate(classes_def.keys())}
+        reverse_classes_def = {}
+        for (new_class, old_classes) in classes_def.items():
+            reverse_classes_def.update(dict(zip(old_classes, [new_class]*len(old_classes))))
+        for video, (class_id, scene_id) in video_labels.items():
+            new_class_id = remap_label(class_id, reverse_class_map, update_class_map, reverse_classes_def)
+            video_labels[video] = (new_class_id, scene_id)
+
+
     if len(scene_labels_split) == 0:
         logger.warning(f'Empty {subset} split. Check your json file.')
         return {}, {}, {}, {}
 
     class_counter = Counter([])
     for video, (class_id, scene_id) in tqdm(video_labels.items(), total=len(video_labels.items())):
-        time_slot = get_time_slot(video)  # TODO  multiply by 30
+        time_slot = get_time_slot(video)
         sample = {}
         n_frames = 0
         if str(scene_id) not in scene_labels_split:  # not required split from: train, test,
@@ -275,7 +309,6 @@ def make_dataset(dataset_path, jpg_path, subset, n_samples_for_each_video=1, sam
         if (end_t - begin_t + 1) < sample_duration:
             new_begin_t = begin_t - (sample_duration - (end_t - begin_t + 1))
             begin_t = max(1, new_begin_t)
-
 
         sample = {
             'video': path_to_video_frames,
@@ -317,6 +350,9 @@ def make_dataset(dataset_path, jpg_path, subset, n_samples_for_each_video=1, sam
     # print(np.array(list(video_labels.values())))
     video_counter = Counter(np.array(list(video_labels.values()))[:, 0])
     print('DATASET REVIEW')
+    if need_relabel:
+        class_map  = update_class_map
+        reverse_class_map = dict(zip(class_map.values(), class_map.keys()))
     print(class_map)
     reverse_class_map = dict(zip(class_map.values(), class_map.keys()))
     for label, c in video_counter.items():
@@ -342,11 +378,11 @@ class GTA_crime(data.Dataset):
         self.data, self.scene_labels, self.scene_map, self.class_map = make_dataset(dataset_path, jpg_path, subset,
                                                                                     n_samples_for_each_video,
                                                                                     sample_duration)
+        self.n_classes = len(self.class_map)
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
         self.target_transform = target_transform
         sometimes = lambda aug: va.Sometimes(0.3, aug)  # Used to apply augmentor with 50% probability
-        print(subset)
         if self.subset == 'train':
             self.seq = va.Sequential([
                 va.RandomRotate(degrees=10),  # randomly rotates the video with a degree randomly choosen from [-10, 10]
@@ -390,6 +426,7 @@ class GTA_crime(data.Dataset):
         clip = torch.stack(clip, 0).permute(1, 0, 2, 3)
 
         target = self.data[index]
+        print(target, target)
         if self.target_transform is not None:
             target = self.target_transform(target)
         scene_label = sample['scene']
@@ -397,3 +434,5 @@ class GTA_crime(data.Dataset):
 
     def __len__(self):
         return len(self.data)
+
+

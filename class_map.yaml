@@ -1,0 +1,14 @@
+class_map:
+  Fire:
+    - Arson
+    - Explosion
+  Property_damage:
+    - Robbery
+    - Vandalism
+  Disarmed_attack:
+    - Assault
+    - Fight
+  Arrest:
+    - Arrest
+  Shooting:
+    - Shooting

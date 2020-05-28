@@ -6,7 +6,7 @@ class STEP(Enum):
     VAL = 'VAL'
     TEST = 'TEST'
 
-CLASS_MAP = ['Arson', 'Fight', 'Vandalism', 'Explosion', 'Arrest', 'Robbery', 'Assault', 'Shooting']
+DEFAULT_CLASS_MAP = ['Arson', 'Fight', 'Vandalism', 'Explosion', 'Arrest', 'Robbery', 'Assault', 'Shooting']
 
 def targets_to_one_hot(targets, n_classes) -> torch.tensor:
     # [N, 1] ->[N, n_classes]
