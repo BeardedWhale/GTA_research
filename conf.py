@@ -62,6 +62,11 @@ def parse_opts():
         type=str,
         help='Directory path of Videos')
     parser.add_argument(
+        '--dataset_conf_path',
+        default='',
+        type=str,
+        help='File for dataset config. Default: class_map.yaml')
+    parser.add_argument(
         '--jpg_dataset_path',
         default='../GTA_JPG_DATASET',
         type=str,
@@ -84,15 +89,6 @@ def parse_opts():
         type=int,
         help='Trained model is saved at every this epochs.')
 
-    # CLASSES CONF
-    parser.add_argument(
-        '--n_classes',
-        default=400,
-        type=int,
-        help=
-        'Number of classes (activitynet: 200, kinetics: 400, ucf101: 101, hmdb51: 51, GTA: 7)'
-    )
-
     parser.add_argument(
         '--finetune_dropout',
         default=0.3,
@@ -107,6 +103,16 @@ def parse_opts():
         help=
         'If use batchnorm in funetune block or not'
     )
+
+    # CLASSES CONF
+    parser.add_argument(
+        '--n_classes',
+        default=400,
+        type=int,
+        help=
+        'Number of classes (activitynet: 200, kinetics: 400, ucf101: 101, hmdb51: 51, GTA: 8)'
+    )
+
 
 
     # SAMPLE PARAMS
