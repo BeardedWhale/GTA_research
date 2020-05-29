@@ -110,7 +110,7 @@ def parse_opts():
         default=400,
         type=int,
         help=
-        'Number of classes (activitynet: 200, kinetics: 400, ucf101: 101, hmdb51: 51, GTA: 7)'
+        'Number of classes (activitynet: 200, kinetics: 400, ucf101: 101, hmdb51: 51, GTA: 8)'
     )
 
 

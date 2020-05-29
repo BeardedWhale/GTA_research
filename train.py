@@ -29,6 +29,7 @@ from torch.utils.data import DataLoader
 
 
 def train(config):
+    print(config.n_classes)
     if config.use_quadruplet:
         assert config.use_embeddings, "Cannot use quadruplet loss without Embedding model"
 
@@ -112,7 +113,8 @@ def train(config):
             pin_memory=True)
 
         train_logger = Logger(experiment, STEP.TRAIN, n_classes=config.n_finetune_classes, topk=[1, 2, 3],
-                              class_map=training_data.class_map, metrics=metrics)
+                              class_map=list(training_data.class_map.keys()), metrics=metrics)
+
         loaders[STEP.TRAIN] = train_loader
         loggers[STEP.TRAIN] = train_logger
         steps.append(STEP.TRAIN)
@@ -134,7 +136,7 @@ def train(config):
             num_workers=config.n_threads,
             pin_memory=True)
         val_logger = Logger(experiment, STEP.VAL, n_classes=config.n_finetune_classes, topk=[1, 2, 3],
-                            class_map=val_data.class_map, metrics=metrics)
+                            class_map=list(val_data.class_map.keys()), metrics=metrics)
         loaders[STEP.VAL] = val_loader
         loggers[STEP.VAL] = val_logger
         steps.append(STEP.VAL)

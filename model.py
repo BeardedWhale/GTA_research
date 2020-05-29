@@ -25,6 +25,7 @@ def generate_model(config):
     assert config.base_model in [
         'resnet', 'preresnet', 'wideresnet', 'resnext', 'densenet'
     ]
+    print(config.base_model, config.n_classes)
 
     if config.base_model == 'resnet':
 
