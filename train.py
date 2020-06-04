@@ -35,7 +35,7 @@ def train(config):
 
 
     experiment = Experiment(api_key="Cbyqfs9Z8auN5ivKsbv2Z6Ogi",
-                            project_name="gta-crime-classification", workspace="beardedwhale")
+                            project_name="gta-crime-classification-2", workspace="beardedwhale")
 
     params = {'ft_index': config.ft_begin_index,
               'model': config.base_model,

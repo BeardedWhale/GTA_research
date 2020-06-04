@@ -98,7 +98,7 @@ def parse_opts():
     )
     parser.add_argument(
         '--use_batch_norm',
-        default=False,
+        default=True,
         type=bool,
         help=
         'If use batchnorm in funetune block or not'

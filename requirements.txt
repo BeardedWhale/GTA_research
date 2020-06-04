@@ -1,0 +1,12 @@
+loguru
+Pillow
+tqdm
+sklearn
+torchsummary
+comet_ml
+opencv-python
+git+https://github.com/okankop/vidaug
+scikit-image
+torchnet
+pandas
+pyyaml==5.3.1
