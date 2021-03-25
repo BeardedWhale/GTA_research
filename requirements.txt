@@ -9,4 +9,4 @@ git+https://github.com/okankop/vidaug
 scikit-image
 torchnet
 pandas
-pyyaml==5.3.1
+pyyaml==5.4
